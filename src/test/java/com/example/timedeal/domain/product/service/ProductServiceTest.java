@@ -71,4 +71,30 @@ class ProductServiceTest {
         // 정상이라면 100개 중 1씩 100번을 뺐으니 0이 되어야 한다
         assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
     }
+
+    @Test
+    @DisplayName("비관적 락을 적용하면 100명이 동시에 주문해도 재고가 정확히 0이 된다")
+    void decreaseStock_pessimistic_lock() throws InterruptedException {
+        // given
+        int threadCount = 100;
+        ExecutorService executorService = Executors.newFixedThreadPool(32);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        // when
+        for (int i = 0; i < threadCount; i++) {
+            executorService.submit(() -> {
+                try {
+                    productService.decreaseStockWithPessimisticLock(savedProduct.getId(), 1L);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        latch.await();
+
+        // then
+        Product findProduct = productRepository.findById(savedProduct.getId()).orElseThrow();
+        System.out.println("===== [비관적 락] 100명 주문 후 남은 실제 재고: " + findProduct.getStockQuantity() + " =====");
+        assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
+    }
 }
