@@ -18,4 +18,14 @@ public class ProductService {
                 .orElseThrow(() -> new IllegalArgumentException("상품이 존재하지 않습니다."));
         product.decreaseStock(quantity);
     }
+
+    @Transactional
+    public void decreaseStockWithPessimisticLock(Long id, Long quantity) {
+        Product product = productRepository.findByIdWithPessimisticLock(id)
+                .orElseThrow(() -> new IllegalArgumentException("상품이 존재하지 않습니다"));
+
+        product.decreaseStock(quantity);
+
+        productRepository.saveAndFlush(product);
+    }
 }
