@@ -1,9 +1,6 @@
 package com.example.timedeal.domain.product.entity;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,6 +16,9 @@ public class Product {
     private String name;
     private Long price;
     private Long stockQuantity;
+
+    @Version
+    private Long version;
 
     public Product(String name, Long price, Long stockQuantity) {
         this.name = name;
