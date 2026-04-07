@@ -28,6 +28,8 @@ class ProductServiceTest {
     @Autowired
     private OptimisticLockFacade optimisticLockFacade;
     private Product savedProduct;
+    @Autowired
+    private RedissonLockFacade redissonLockFacade;
 
     @BeforeEach
     void setUp() {
@@ -131,6 +133,38 @@ class ProductServiceTest {
         Product findProduct = productRepository.findById(savedProduct.getId()).orElseThrow();
         System.out.println("===== [낙관적 락] 남은 재고: " +  findProduct.getStockQuantity() + " =====");
         System.out.println("===== [낙관적 락] 실행 시간: " + (endTime - startTime) + " =====");
+        assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("Redis 분산 락을 적용하면 100명이 동시에 주문해도 재고가 0이 된다")
+    void decreaseStock_redisson_lock() throws InterruptedException {
+        // given
+        int threadCount = 100;
+        ExecutorService executorService = Executors.newFixedThreadPool(32);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        long startTime = System.currentTimeMillis();
+
+        // when
+        for (int i = 0; i < threadCount; i++) {
+            executorService.submit(() -> {
+                try {
+                    redissonLockFacade.decreaseStock(savedProduct.getId(), 1L);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+        long endTime = System.currentTimeMillis();
+
+        // then
+        Product findProduct = productRepository.findById(savedProduct.getId()).orElseThrow();
+        System.out.println("====== [Redis 분산 락] 남은 재고: " + findProduct.getStockQuantity() + " ======");
+        System.out.println("====== [Redis 분산 락] 실행 시간: " + (endTime - startTime) + "ms ======");
+
         assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
     }
 }
