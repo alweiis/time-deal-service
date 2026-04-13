@@ -17,9 +17,11 @@ import java.util.concurrent.TimeUnit;
 public class RedissonLockFacade {
 
     private final RedissonClient redissonClient;
+    private final ProductService productService;
     private final OrderEventProducer orderEventProducer;
 
-    public void decreaseStock(Long productId, Long quantity, Long userId) {
+    // Redis 분산 락 획득 후 DB에 직접 동기(Sync) 업데이트
+    public void decreaseStock(Long productId, Long quantity) {
         // 1. Redis에서 락 객체 가져오기
         RLock lock = redissonClient.getLock("product_lock:" + productId);
 
@@ -33,8 +35,7 @@ public class RedissonLockFacade {
             }
 
             // 3. 락 획득에 성공했다면, 실제 트랜잭션이 걸린 비즈니스 로직 호출
-            OrderEvent event = new OrderEvent(userId, productId, quantity);
-            orderEventProducer.sendOrderEvent(event);
+            productService.decreaseStock(productId, quantity);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } finally {
@@ -45,6 +46,7 @@ public class RedissonLockFacade {
         }
     }
 
+    // Redis 카운터(게이트키퍼) 확인 후 Kafka 비동기(Async) 이벤트 발행
     public void decreaseStockAndCreateOrder(Long productId, Long quantity, Long userId) {
         RLock lock = redissonClient.getLock("product_lock:" + productId);
 
