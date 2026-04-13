@@ -2,11 +2,12 @@ package com.example.timedeal.domain.product.service;
 
 import com.example.timedeal.domain.product.entity.Product;
 import com.example.timedeal.domain.product.repository.ProductRepository;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.redisson.api.RAtomicLong;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -31,10 +32,16 @@ class ProductServiceTest {
     @Autowired
     private RedissonLockFacade redissonLockFacade;
 
+    @Autowired
+    private RedissonClient redissonClient;
+
     @BeforeEach
     void setUp() {
-        Product product = new Product("아이폰 17", 1500000L, 100L);
+        Product product = new Product("아이폰 17", 1500000L, 10L);
         savedProduct = productRepository.saveAndFlush(product);
+
+        RAtomicLong stockCounter = redissonClient.getAtomicLong("product_stock:" + savedProduct.getId());
+        stockCounter.set(10L);
     }
 
     @AfterEach
@@ -166,5 +173,45 @@ class ProductServiceTest {
         System.out.println("====== [Redis 분산 락] 실행 시간: " + (endTime - startTime) + "ms ======");
 
         assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("비동기 환경에서 100명이 동시에 10개 남은 상품을 주문하면, 딱 10명만 성공해야 한다")
+    void final_time_deal_test() throws InterruptedException {
+        //given
+        int threadCount = 100;
+        ExecutorService executorService = Executors.newFixedThreadPool(32);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        //when
+        for (int i = 0; i < threadCount; i++) {
+            long userId = (long) i;
+
+            executorService.submit(() -> {
+                try {
+                    // Redis 카운터 -> Kafka 발행 로직이 담긴 파사드 호출
+                    redissonLockFacade.decreaseStockAndCreateOrder(savedProduct.getId(), 1L, userId);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+
+        System.out.println("====== 카프카 컨슈머 처리 대기 중 (10초) ======");
+        Thread.sleep(10000);
+
+        //then
+        Product findProduct = productRepository.findById(savedProduct.getId()).orElseThrow();
+
+        // 검증 1: DB 재고가 정확히 0인지 확인
+        System.out.println("===== 최종 DB 남은 재고: " +  findProduct.getStockQuantity() + " =====");
+        assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
+
+        // 검증 2: Redis 카운터가 0 이하로 내려갔는지 확인
+        RAtomicLong stockCounter = redissonClient.getAtomicLong("product_stock:" + savedProduct.getId());
+        System.out.println("===== 최종 Redis 남은 재고: " + stockCounter.get() + " =====");
+        assertThat(stockCounter.get()).isEqualTo(0L);
     }
 }
