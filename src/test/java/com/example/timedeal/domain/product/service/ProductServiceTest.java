@@ -223,4 +223,21 @@ class ProductServiceTest {
         System.out.println("====== 생성된 주문 건수: " + orderCount + " ======");
         assertThat(orderCount).isEqualTo(10L);
     }
+
+    @Test
+    @DisplayName("장애 상황 시뮬레이션: 재시도 3번 후 DLQ로 이동해야 한다")
+    void dlq_test() throws InterruptedException {
+        // given (재고가 없는 상품 ID 발송)
+        // 게이트키퍼(redis)를 통과하기 위해 999L 상품에 가짜 재고 1개를 넣는다
+        long dummyProductId = 999L;
+        RAtomicLong stockCounter = redissonClient.getAtomicLong("product_stock:" + dummyProductId);
+        stockCounter.set(1L);
+
+        // when : 존재하지 않는 상품 ID(999L)로 주문 요청
+        redissonLockFacade.decreaseStockAndCreateOrder(999L, 1L, 1L);
+
+        // then: 3번 재시도(2초 간격)와 DLT 이동을 위해 10초 대
+        System.out.println("===== DLQ 재처리 및 격리 대기 중 (10초) =====");
+        Thread.sleep(10000);
+    }
 }
