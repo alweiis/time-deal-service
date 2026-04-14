@@ -6,7 +6,12 @@ import com.example.timedeal.domain.order.repository.OrderRepository;
 import com.example.timedeal.domain.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,10 +23,16 @@ public class OrderEventConsumer {
     private final ProductService productService;
     private final OrderRepository orderRepository;
 
+    @RetryableTopic(backoff = @Backoff(delay = 2000))
     @Transactional
     @KafkaListener(topics = "order-create-topic", groupId = "time-deal-group")
     public void consumeOrderEvent(OrderEvent orderEvent) {
         log.info("카프카에서 주문 이벤트 수신 완료! Data: {}", orderEvent);
+
+        // [테스트용 강제 예외 발생] productId가 999L이면 실패한다고 가정
+        if (orderEvent.productId().equals(999L)) {
+            throw new RuntimeException("DB 장애 발생 시뮬레이션!");
+        }
 
         try {
             // 1. 실재 DB의 재고 차감
@@ -36,5 +47,11 @@ public class OrderEventConsumer {
             log.error("주문 처리 중 에러 발생: {}", e.getMessage());
             throw e;
         }
+    }
+
+    @DltHandler
+    public void handleDlt(OrderEvent orderEvent, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+        log.error("=== [DLQ 발생] 모든 재시도 실패, 메시지 격리 완료 ===");
+        log.error("Topic: {}, Data: {}", topic, orderEvent);
     }
 }
