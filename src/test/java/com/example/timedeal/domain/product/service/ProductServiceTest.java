@@ -1,5 +1,6 @@
 package com.example.timedeal.domain.product.service;
 
+import com.example.timedeal.domain.order.repository.OrderRepository;
 import com.example.timedeal.domain.product.entity.Product;
 import com.example.timedeal.domain.product.repository.ProductRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -34,6 +35,9 @@ class ProductServiceTest {
 
     @Autowired
     private RedissonClient redissonClient;
+
+    @Autowired
+    private OrderRepository orderRepository;
 
     @BeforeEach
     void setUp() {
@@ -176,7 +180,7 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("비동기 환경에서 100명이 동시에 10개 남은 상품을 주문하면, 딱 10명만 성공해야 한다")
+    @DisplayName("최종 테스트: 재고는 0이 되고, 주문 내역은 정확히 10건이 생성되어야 한다")
     void final_time_deal_test() throws InterruptedException {
         //given
         int threadCount = 100;
@@ -213,5 +217,10 @@ class ProductServiceTest {
         RAtomicLong stockCounter = redissonClient.getAtomicLong("product_stock:" + savedProduct.getId());
         System.out.println("===== 최종 Redis 남은 재고: " + stockCounter.get() + " =====");
         assertThat(stockCounter.get()).isEqualTo(0L);
+
+        // 검증 3: 주문 테이블에 데이터가 10개 쌓였는가?
+        long orderCount = orderRepository.count();
+        System.out.println("====== 생성된 주문 건수: " + orderCount + " ======");
+        assertThat(orderCount).isEqualTo(10L);
     }
 }
