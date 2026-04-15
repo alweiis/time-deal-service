@@ -8,6 +8,7 @@ import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
 import org.redisson.api.RScript;
 import org.redisson.api.RedissonClient;
+import org.redisson.client.codec.StringCodec;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
@@ -85,32 +86,32 @@ public class RedissonLockFacade {
         }
     }
 
-    // Lua Script를 이용한 원자적 재고 차감 및 주문 이벤트 발행
     public void decreaseStockWithLua(Long productId, Long quantity, Long userId) {
         String stockKey = "product_stock:" + productId;
 
         // 1. Lua Script 정의
-        // 로직: 재고가 있는지 확인 -> 있으면 차감 후 1 반환 -> 없으면 0 반환 -> 키 없으면 -1 반환
         String script =
                 "local stock = redis.call('get', KEYS[1]) " +
                         "if not stock then return -1 end " +
                         "if tonumber(stock) >= tonumber(ARGV[1]) then " +
-                        "   return redis.call('decrby' KEYS[1], ARGV[1]) " +
+                        "   return redis.call('decrby', KEYS[1], ARGV[1]) " +
                         "else " +
-                        "   return -2 " + // 재고 부족 시 -2 반환
+                        "   return -2 " +
                         "end";
 
-        // 2. 스크립트 실행 (RScript 객체 활용)
-        Long result = redissonClient.getScript()
+        // 2. 스크립트 실행
+        // 핵심 포인트: StringCodec.INSTANCE를 주입하고, quantity도 String으로 변환해서 전달
+        Object evalResult = redissonClient.getScript(StringCodec.INSTANCE)
                 .eval(RScript.Mode.READ_WRITE,
                         script,
-                        RScript.ReturnType.LONG,
+                        RScript.ReturnType.VALUE, // INTEGER 대신 VALUE 사용
                         java.util.Collections.singletonList(stockKey),
-                        quantity);
+                        quantity.toString()); // Long을 순수 String으로 전달
 
-        // 3. 결과에 따른 처리
+        // 3. 반환값 처리 (Object를 Long으로 안전하게 캐스팅)
+        Long result = Long.valueOf(evalResult.toString());
+
         if (result >= 0) {
-            // 성공 시 Kafka 이벤트 발행
             OrderEvent event = new OrderEvent(userId, productId, quantity);
             orderEventProducer.sendOrderEvent(event);
             log.info("[Lua] 주문 이벤트 발행 성공 (남은 재고: {})", result);
