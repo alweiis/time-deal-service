@@ -22,8 +22,9 @@ export const options = {
 
 export default function (data) {
   const productId = 1;
-  const userId = Math.floor(Math.random() * 100000);
-  const url = `http://localhost:8080/api/v1/orders/${productId}?userId=${userId}&quantity=1`;
+  const userId = __VU * 1000 + __ITER;
+  /*const url = `http://localhost:8080/api/v1/orders/${productId}?userId=${userId}&quantity=1`;*/
+  const url = `http://localhost:8080/api/v1/orders/lua/${productId}?userId=${userId}&quantity=1`;
 
   const res = http.post(url, null, { tags: { name: 'OrderAPI' } });
 
