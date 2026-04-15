@@ -20,4 +20,17 @@ public class OrderController {
         redissonLockFacade.decreaseStockAndCreateOrder(productId, userId, quantity);
         return "주문 요청 접수";
     }
+
+    /**
+     * Lua Script 기반 타임딜 주문 API (성능 최적화 버전)
+     */
+    @PostMapping("/lua/{productId}")
+    public String createOrderWithLua(
+            @PathVariable Long productId,
+            @RequestParam Long userId,
+            @RequestParam Long quantity
+    ) {
+        redissonLockFacade.decreaseStockWithLua(productId, quantity, userId);
+        return "Lua 기반 주문 요청이 접수되었습니다.";
+    }
 }
