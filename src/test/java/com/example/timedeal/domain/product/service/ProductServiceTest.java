@@ -240,4 +240,44 @@ class ProductServiceTest {
         System.out.println("===== DLQ 재처리 및 격리 대기 중 (10초) =====");
         Thread.sleep(10000);
     }
+
+    @Test
+    @DisplayName("성능 비교: 분산 락 vs Lua Script")
+    void compare_performance() throws InterruptedException {
+        int threadCount = 100;
+        Long productId = savedProduct.getId();
+
+        // 1. 분산 락 방식 측정
+        long startLock = System.currentTimeMillis();
+        runConcurrencyTest(() -> redissonLockFacade.decreaseStockAndCreateOrder(productId, 1L, 1L), threadCount);
+        long endLock = System.currentTimeMillis();
+
+        // 2. Redis 초기화 (비교를 위해 다시 100개 세팅)
+        redissonClient.getAtomicLong("product_stock:" + productId).set(100L);
+
+        // 3. Lua Script 방식 측정
+        long startLua = System.currentTimeMillis();
+        runConcurrencyTest(() -> redissonLockFacade.decreaseStockWithLua(productId, 1L, 1L), threadCount);
+        long endLua = System.currentTimeMillis();
+
+        System.out.println("====== 결과 보고 ======");
+        System.out.println("분산 락 방식 소요 시간: " + (endLock - startLock) + "ms");
+        System.out.println("Lua Script 방식 소요 시간: " + (endLua - startLua) + "ms");
+    }
+
+    // 헬퍼 메서드
+    private void runConcurrencyTest(Runnable task, int threadCount) throws InterruptedException {
+        ExecutorService executorService = Executors.newFixedThreadPool(32);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        for (int i = 0; i < threadCount; i++) {
+            executorService.submit(() -> {
+                try {
+                    task.run();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        latch.await();
+    }
 }

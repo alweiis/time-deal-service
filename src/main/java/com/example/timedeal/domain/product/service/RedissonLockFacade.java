@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
+import org.redisson.api.RScript;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 
@@ -81,6 +82,42 @@ public class RedissonLockFacade {
             if (lock.isLocked() && lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
+        }
+    }
+
+    // Lua Script를 이용한 원자적 재고 차감 및 주문 이벤트 발행
+    public void decreaseStockWithLua(Long productId, Long quantity, Long userId) {
+        String stockKey = "product_stock:" + productId;
+
+        // 1. Lua Script 정의
+        // 로직: 재고가 있는지 확인 -> 있으면 차감 후 1 반환 -> 없으면 0 반환 -> 키 없으면 -1 반환
+        String script =
+                "local stock = redis.call('get', KEYS[1]) " +
+                        "if not stock then return -1 end " +
+                        "if tonumber(stock) >= tonumber(ARGV[1]) then " +
+                        "   return redis.call('decrby' KEYS[1], ARGV[1]) " +
+                        "else " +
+                        "   return -2 " + // 재고 부족 시 -2 반환
+                        "end";
+
+        // 2. 스크립트 실행 (RScript 객체 활용)
+        Long result = redissonClient.getScript()
+                .eval(RScript.Mode.READ_WRITE,
+                        script,
+                        RScript.ReturnType.LONG,
+                        java.util.Collections.singletonList(stockKey),
+                        quantity);
+
+        // 3. 결과에 따른 처리
+        if (result >= 0) {
+            // 성공 시 Kafka 이벤트 발행
+            OrderEvent event = new OrderEvent(userId, productId, quantity);
+            orderEventProducer.sendOrderEvent(event);
+            log.info("[Lua] 주문 이벤트 발행 성공 (남은 재고: {})", result);
+        } else if (result == -2) {
+            log.info("[Lua] 품절되었습니다. 상품 ID: {})", productId);
+        } else {
+            log.error("[Lua] Redis에 재고 데이터가 존재하지 않습니다. (ID: {})", productId);
         }
     }
 }
