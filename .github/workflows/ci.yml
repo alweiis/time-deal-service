@@ -1,0 +1,33 @@
+name: TimeDeal Service CI
+
+# 1. 동작 조건 (Trigger): main 브랜치에 Push 되거나 PR이 올라올 때 실행
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# 2. 실행할 작업 (Jobs)
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest # GitHub이 제공하는 가상 Linux 서버에서 실행
+
+    steps:
+      # Step 1: GitHub 저장소에서 코드 내려받기
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # Step 2: Java 17 환경 세팅
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin' # 가장 대중적인 OpenJDK 배포판
+
+      # Step 3: Gradle 실행 권한 부여 (리눅스 환경 필수)
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Step 4: 프로젝트 빌드 및 테스트 실행
+      - name: Build and Test with Gradle
+        run: ./gradlew clean build
