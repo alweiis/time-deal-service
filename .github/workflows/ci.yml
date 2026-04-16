@@ -12,6 +12,30 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest # GitHub이 제공하는 가상 Linux 서버에서 실행
 
+    # 테스트에 필요한 인프라(Redis, Kafka) 정의
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+      zookeeper:
+        image: bitnami/zookeeper:latest
+        ports:
+          - 2181:2181
+        env:
+          ALLOW_ANONYMOUS_LOGIN: yes
+      kafka:
+        image: bitnami/kafka:latest
+        ports:
+          - 9092:9092
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+          ALLOW_PLAINTEXT_LISTENER: yes
+          KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+          KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+
     steps:
       # Step 1: GitHub 저장소에서 코드 내려받기
       - name: Checkout Source Code
