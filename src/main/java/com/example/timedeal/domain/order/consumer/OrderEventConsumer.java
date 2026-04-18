@@ -51,7 +51,7 @@ public class OrderEventConsumer {
             Order order = new Order(orderEvent.userId(), orderEvent.productId(), orderEvent.quantity());
             orderRepository.save(order);
 
-            log.info("주문 처리 완료 (상품 ID: {}, 유저 ID: {})", orderEvent.productId(), orderEvent.quantity());
+            log.info("주문 처리 완료 (상품 ID: {}, 유저 ID: {})", orderEvent.productId(), orderEvent.userId());
         } catch (Exception e) {
             log.error("주문 처리 중 에러 발생: {}", e.getMessage());
             throw e;
