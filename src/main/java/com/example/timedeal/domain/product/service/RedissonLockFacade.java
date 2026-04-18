@@ -1,5 +1,7 @@
 package com.example.timedeal.domain.product.service;
 
+import com.example.timedeal.common.exception.BusinessException;
+import com.example.timedeal.common.exception.ErrorCode;
 import com.example.timedeal.domain.order.event.OrderEvent;
 import com.example.timedeal.domain.order.producer.OrderEventProducer;
 import lombok.RequiredArgsConstructor;
@@ -116,9 +118,9 @@ public class RedissonLockFacade {
             orderEventProducer.sendOrderEvent(event);
             log.info("[Lua] 주문 이벤트 발행 성공 (남은 재고: {})", result);
         } else if (result == -2) {
-            log.info("[Lua] 품절되었습니다. 상품 ID: {})", productId);
+            throw new BusinessException(ErrorCode.OUT_OF_STOCK);
         } else {
-            log.error("[Lua] Redis에 재고 데이터가 존재하지 않습니다. (ID: {})", productId);
+            throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.example.timedeal.domain.product.service;
 
+import com.example.timedeal.common.exception.BusinessException;
+import com.example.timedeal.common.exception.ErrorCode;
 import com.example.timedeal.domain.product.entity.Product;
 import com.example.timedeal.domain.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,14 +22,14 @@ public class ProductService {
     @Transactional
     public void decreaseStock(Long id, Long quantity) {
         Product product = productRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("상품이 존재하지 않습니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         product.decreaseStock(quantity);
     }
 
     @Transactional
     public void decreaseStockWithPessimisticLock(Long id, Long quantity) {
         Product product = productRepository.findByIdWithPessimisticLock(id)
-                .orElseThrow(() -> new IllegalArgumentException("상품이 존재하지 않습니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
         product.decreaseStock(quantity);
 
@@ -37,7 +39,7 @@ public class ProductService {
     @Transactional
     public void decreaseStockWithOptimisticLock(Long id, Long quantity) {
         Product product = productRepository.findByIdWithOptimisticLock(id)
-                .orElseThrow(() -> new IllegalArgumentException("상품이 존재하지 않습니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         product.decreaseStock(quantity);
         productRepository.saveAndFlush(product);
     }
