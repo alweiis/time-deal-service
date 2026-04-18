@@ -3,6 +3,7 @@ package com.example.timedeal.domain.product.service;
 import com.example.timedeal.domain.order.repository.OrderRepository;
 import com.example.timedeal.domain.product.entity.Product;
 import com.example.timedeal.domain.product.repository.ProductRepository;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,6 +13,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -50,7 +52,9 @@ class ProductServiceTest {
 
     @AfterEach
     void tearDown() {
-        productRepository.deleteAll();
+        orderRepository.deleteAllInBatch();
+        productRepository.deleteAllInBatch();
+        redissonClient.getKeys().flushdb();
     }
 
     @Test
@@ -194,7 +198,7 @@ class ProductServiceTest {
             executorService.submit(() -> {
                 try {
                     // Redis 카운터 -> Kafka 발행 로직이 담긴 파사드 호출
-                    redissonLockFacade.decreaseStockAndCreateOrder(savedProduct.getId(), 1L, userId);
+                    redissonLockFacade.decreaseStockAndCreateOrder(savedProduct.getId(), userId, 1L);
                 } finally {
                     latch.countDown();
                 }
@@ -203,25 +207,29 @@ class ProductServiceTest {
 
         latch.await();
 
-        System.out.println("====== 카프카 컨슈머 처리 대기 중 (10초) ======");
-        Thread.sleep(10000);
+        System.out.println("====== 카프카 컨슈머 비동기 처리 대기 (최대 15초) ======");
 
-        //then
-        Product findProduct = productRepository.findById(savedProduct.getId()).orElseThrow();
+        // then
+        // Thread.sleep(10000) 대신 Awaitility 사용: 최대 15초까지 대기하며, 1초마다 검증 로직을 실행해 봅니다.
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(15))
+                .pollInterval(Duration.ofSeconds(1))
+                .untilAsserted(() -> {
+                    Product findProduct = productRepository.findById(savedProduct.getId()).orElseThrow();
 
-        // 검증 1: DB 재고가 정확히 0인지 확인
-        System.out.println("===== 최종 DB 남은 재고: " +  findProduct.getStockQuantity() + " =====");
-        assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
+                    // 검증 1: DB 재고가 정확히 0인지 확인
+                    assertThat(findProduct.getStockQuantity()).isEqualTo(0L);
 
-        // 검증 2: Redis 카운터가 0 이하로 내려갔는지 확인
-        RAtomicLong stockCounter = redissonClient.getAtomicLong("product_stock:" + savedProduct.getId());
-        System.out.println("===== 최종 Redis 남은 재고: " + stockCounter.get() + " =====");
-        assertThat(stockCounter.get()).isEqualTo(0L);
+                    // 검증 2: Redis 카운터가 0 이하로 내려갔는지 확인
+                    RAtomicLong stockCounter = redissonClient.getAtomicLong("product_stock:" + savedProduct.getId());
+                    assertThat(stockCounter.get()).isEqualTo(0L);
 
-        // 검증 3: 주문 테이블에 데이터가 10개 쌓였는가?
-        long orderCount = orderRepository.count();
-        System.out.println("====== 생성된 주문 건수: " + orderCount + " ======");
-        assertThat(orderCount).isEqualTo(10L);
+                    // 검증 3: 주문 테이블에 데이터가 10개 쌓였는가?
+                    long orderCount = orderRepository.count();
+                    assertThat(orderCount).isEqualTo(10L);
+                });
+
+        System.out.println("====== 비동기 테스트 완벽 통과! ======");
     }
 
     @Test
