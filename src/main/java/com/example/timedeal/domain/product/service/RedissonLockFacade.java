@@ -51,7 +51,7 @@ public class RedissonLockFacade {
     }
 
     // Redis 카운터(게이트키퍼) 확인 후 Kafka 비동기(Async) 이벤트 발행
-    public void decreaseStockAndCreateOrder(Long productId, Long quantity, Long userId) {
+    public void decreaseStockAndCreateOrder(Long productId, Long userId, Long quantity) {
         RLock lock = redissonClient.getLock("product_lock:" + productId);
 
         try {
@@ -59,28 +59,28 @@ public class RedissonLockFacade {
             boolean available = lock.tryLock(10, 1, TimeUnit.SECONDS);
 
             if (!available) {
-                return;
+                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
             }
 
             // 2. Redis에 저장된 재고 수량을 가져옴 (미리 저장되어 있다고 가정)
             RAtomicLong stockCounter = redissonClient.getAtomicLong("product_stock:" + productId);
 
             // 3. Redis에서 먼저 재고를 깎음 (Atomic 연산)
-            long remainStock = stockCounter.decrementAndGet();
+            long remainStock = stockCounter.addAndGet(-quantity);
 
             if (remainStock < 0) {
                 // 재고가 없으면 깎았던 숫자를 다시 복구시키고 종료 (Rollback)
-                stockCounter.incrementAndGet();
-                log.info("품절되었습니다. (상품 ID: {})", productId);
-                return;
+                stockCounter.addAndGet(quantity);
+                throw new BusinessException(ErrorCode.OUT_OF_STOCK);
             }
 
             // 4. 재고가 확인된 경우에만 Kafka로 주문 이벤트 발행
             OrderEvent event = new OrderEvent(userId, productId, quantity);
             orderEventProducer.sendOrderEvent(event);
-            log.info("주문 이벤트 발행 성공 (남은 Redis 재고: {})", remainStock);
+            log.info("[분산락] 주문 이벤트 발행 성공 (남은 Redis 재고: {})", remainStock);
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            Thread.currentThread().interrupt(); // InterruptedException 복구
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         } finally {
             if (lock.isLocked() && lock.isHeldByCurrentThread()) {
                 lock.unlock();
