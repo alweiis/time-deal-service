@@ -35,29 +35,34 @@ public class OrderEventConsumer {
         String traceId = traceIdBytes != null ? new String(traceIdBytes) : "unknown";
         MDC.put("traceId", traceId);
 
-        log.info("카프카에서 주문 이벤트 수신 완료! Data: {}", orderEvent);
-
-        // [테스트용 강제 예외 발생] productId가 999L이면 실패한다고 가정
-        if (orderEvent.productId().equals(999L)) {
-            throw new RuntimeException("DB 장애 발생 시뮬레이션!");
-        }
-
         try {
-            log.info("[Consumer] 주문 처리 시작. TraceID: {}", traceId);
-            // 1. 실재 DB의 재고 차감
-            productService.decreaseStock(orderEvent.productId(),  orderEvent.quantity());
+            log.info("카프카에서 주문 이벤트 수신 완료! Data: {}, TraceID: {}", orderEvent, traceId);
 
-            // 2. 주문 내역 생성 및 저장
-            Order order = new Order(orderEvent.userId(), orderEvent.productId(), orderEvent.quantity());
-            orderRepository.save(order);
+            // [테스트용 강제 예외 발생] productId가 999L이면 실패한다고 가정
+            if (orderEvent.productId().equals(999L)) {
+                throw new RuntimeException("DB 장애 발생 시뮬레이션!");
+            }
+
+            processOrder(orderEvent);
 
             log.info("주문 처리 완료 (상품 ID: {}, 유저 ID: {})", orderEvent.productId(), orderEvent.userId());
         } catch (Exception e) {
+            // 인터럽트 상태 복구 (최상위 Exception을 잡을 때의 관례)
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
             log.error("주문 처리 중 에러 발생: {}", e.getMessage());
-            throw e;
+            throw e; // 재시도를 위해 다시 던짐
         } finally {
             MDC.clear();
         }
+    }
+
+    private void processOrder(OrderEvent orderEvent) {
+        productService.decreaseStock(orderEvent.productId(), orderEvent.quantity());
+        Order order = new Order(orderEvent.userId(), orderEvent.productId(), orderEvent.quantity());
+        orderRepository.save(order);
     }
 
     @DltHandler
