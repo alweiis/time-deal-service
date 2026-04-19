@@ -1,7 +1,9 @@
 package com.example.timedeal.domain.order.controller;
 
 import com.example.timedeal.common.response.ApiResponse;
+import com.example.timedeal.domain.order.dto.OrderCreateRequest;
 import com.example.timedeal.domain.product.service.RedissonLockFacade;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,10 +17,9 @@ public class OrderController {
     @PostMapping("/{productId}")
     public ApiResponse<String> createOrder(
             @PathVariable Long productId,
-            @RequestParam Long userId,
-            @RequestParam Long quantity
-    ) {
-        redissonLockFacade.decreaseStockAndCreateOrder(productId, userId, quantity);
+            @Valid @RequestBody OrderCreateRequest request
+            ) {
+        redissonLockFacade.decreaseStockAndCreateOrder(productId, request.getUserId(), request.getQuantity());
         return ApiResponse.success("주문 요청이 성공적으로 접수되었습니다. (분산 락)");
     }
 
@@ -28,10 +29,9 @@ public class OrderController {
     @PostMapping("/lua/{productId}")
     public ApiResponse<String> createOrderWithLua(
             @PathVariable Long productId,
-            @RequestParam Long userId,
-            @RequestParam Long quantity
+            @Valid @RequestBody OrderCreateRequest request
     ) {
-        redissonLockFacade.decreaseStockWithLua(productId, quantity, userId);
+        redissonLockFacade.decreaseStockWithLua(productId, request.getUserId(), request.getQuantity());
         return ApiResponse.success("주문 요청이 성공적으로 접수되었습니다. (Lua Script)");
     }
 }

@@ -4,6 +4,8 @@ import com.example.timedeal.common.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -33,6 +35,21 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<Void>builder()
                         .code(ErrorCode.INTERNAL_SERVER_ERROR.getCode())
                         .message(ErrorCode.INTERNAL_SERVER_ERROR.getMessage())
+                        .build());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    protected ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException e) {
+        FieldError fieldError = e.getBindingResult().getFieldError();
+        String errorMessage = fieldError != null ? fieldError.getDefaultMessage() : "잘못된 입력값입니다.";
+
+        log.error("Validation Exception: {}", errorMessage);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.<Void>builder()
+                        .code(ErrorCode.INVALID_INPUT_VALUE.getCode())
+                        .message(errorMessage)
                         .build());
     }
 }

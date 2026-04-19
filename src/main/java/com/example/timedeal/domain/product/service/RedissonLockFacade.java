@@ -88,7 +88,7 @@ public class RedissonLockFacade {
         }
     }
 
-    public void decreaseStockWithLua(Long productId, Long quantity, Long userId) {
+    public void decreaseStockWithLua(Long productId, Long userId, Long quantity) {
         String stockKey = "product_stock:" + productId;
 
         // 1. Lua Script 정의
