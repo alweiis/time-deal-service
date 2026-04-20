@@ -17,7 +17,7 @@ public class MdcInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         // 1. 요청마다 고유한 Trace ID 생성
-        String traceId = UUID.randomUUID().toString().substring(0, 8);
+        String traceId = UUID.randomUUID().toString();
         // 2. MDC에 저장
         MDC.put(TRACE_ID, traceId);
         return true;
