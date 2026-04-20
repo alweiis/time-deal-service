@@ -20,11 +20,12 @@ public class OrderEventProducer {
         String traceId = MDC.get("traceId");
         String topic = "order-create-topic";
 
-        // ProducerRecord를 생성하여 헤더에 전달
-        ProducerRecord<String, Object> record = new ProducerRecord<>(topic, orderEvent);
+        // 파티션 순서 보장을 위해 userId를 String으로 변환하여 Kafka Key로 사용
+        String kafkaKey = String.valueOf(orderEvent.userId());
+        ProducerRecord<String, Object> record = new ProducerRecord<>(topic, kafkaKey, orderEvent);
         record.headers().add("traceId", traceId != null ? traceId.getBytes() : "system".getBytes());
 
         kafkaTemplate.send(record);
-        log.info("카프카로 주문 이벤트 전송 완료: Topic: {}, Data: {}", topic, orderEvent);
+        log.info("카프카로 주문 이벤트 전송 완료: Topic: {}, Key: {}, Data: {}", topic, kafkaKey, orderEvent);
     }
 }
